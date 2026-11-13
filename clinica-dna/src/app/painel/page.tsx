@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { STATUS_COR, STATUS_LABEL, formataDataLonga, formataMoeda } from "@/lib/format";
-import { DATE_RE, addDays, dayRangeUtc, epochToLocalLabel, todayLocal } from "@/lib/scheduling/time";
+import { addDays, dataValida, dayRangeUtc, epochToLocalLabel, todayLocal } from "@/lib/scheduling/time";
 import type { AgendaPainelLinha } from "@/lib/types/domain";
 import { StatusForm } from "./StatusForm";
 import { exigeSessao } from "./sessao";
@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Agenda" };
 
 export default async function PainelPage({ searchParams }: { searchParams: Promise<{ data?: string }> }) {
   const { data: dataParam } = await searchParams;
-  const data = dataParam && DATE_RE.test(dataParam) ? dataParam : todayLocal();
+  const data = dataParam && dataValida(dataParam) ? dataParam : todayLocal();
   const { supabase, perfil } = await exigeSessao();
   if (!perfil) return null;
 
@@ -87,7 +87,7 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COR[l.status]}`}>
               {STATUS_LABEL[l.status]}
             </span>
-            <StatusForm id={l.id} status={l.status} />
+            <StatusForm id={l.id} status={l.status} papel={perfil.role} />
           </li>
         ))}
       </ul>

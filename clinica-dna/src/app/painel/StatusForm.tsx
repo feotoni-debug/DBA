@@ -1,14 +1,21 @@
 "use client";
 
 import { useActionState } from "react";
-import { STATUS_LABEL } from "@/lib/format";
-import type { AgendamentoStatus } from "@/lib/types/domain";
+import { PROXIMOS_STATUS_PROFISSIONAL, STATUS_LABEL } from "@/lib/format";
+import type { AgendamentoStatus, UserRole } from "@/lib/types/domain";
 import { atualizarStatus, type ResultadoStatus } from "./actions";
 
 const inicial: ResultadoStatus = { ok: true, mensagem: null };
 
-export function StatusForm({ id, status }: { id: string; status: AgendamentoStatus }) {
+export function StatusForm({ id, status, papel }: { id: string; status: AgendamentoStatus; papel: UserRole }) {
   const [resultado, acao, salvando] = useActionState(atualizarStatus, inicial);
+
+  // Recepção/admin: qualquer status. Profissional: só avançar o atendimento.
+  const opcoes: AgendamentoStatus[] =
+    papel === "profissional"
+      ? [status, ...PROXIMOS_STATUS_PROFISSIONAL[status]]
+      : (Object.keys(STATUS_LABEL) as AgendamentoStatus[]);
+  if (opcoes.length <= 1) return null;
 
   return (
     <form action={acao} className="flex flex-col items-end gap-1">
@@ -22,9 +29,9 @@ export function StatusForm({ id, status }: { id: string; status: AgendamentoStat
           className="input w-auto py-1.5 text-sm"
           aria-label="Status do atendimento"
         >
-          {Object.entries(STATUS_LABEL).map(([v, label]) => (
+          {opcoes.map((v) => (
             <option key={v} value={v}>
-              {label}
+              {STATUS_LABEL[v]}
             </option>
           ))}
         </select>

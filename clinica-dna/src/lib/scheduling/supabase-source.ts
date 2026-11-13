@@ -7,8 +7,14 @@ import type {
 } from "@/lib/types/domain";
 import type { SlotsDataSource } from "./slots";
 
-/** Implementação de `SlotsDataSource` usando apenas o que `anon` pode ler. */
-export function supabaseSlotsSource(supabase: SupabaseClient): SlotsDataSource {
+/**
+ * Implementação de `SlotsDataSource`.
+ * - `publico`: cliente anônimo, para catálogo, profissionais e grade.
+ * - `servidor`: cliente service_role, SÓ para `intervalos_ocupados`, que não é
+ *   público (a ocupação da agenda não pode ser lida por qualquer um).
+ */
+export function supabaseSlotsSource(publico: SupabaseClient, servidor: SupabaseClient): SlotsDataSource {
+  const supabase = publico;
   return {
     async getParametros() {
       const { data, error } = await supabase.rpc("parametros_agendamento_publicos").single();
@@ -42,7 +48,7 @@ export function supabaseSlotsSource(supabase: SupabaseClient): SlotsDataSource {
     },
 
     async getIntervalosOcupados(profissionalIds, inicioIso, fimIso) {
-      const { data, error } = await supabase.rpc("intervalos_ocupados", {
+      const { data, error } = await servidor.rpc("intervalos_ocupados", {
         p_profissional_ids: profissionalIds,
         p_inicio: inicioIso,
         p_fim: fimIso,

@@ -26,6 +26,7 @@ As migrations ficam em `supabase/migrations/` e são aplicadas em ordem:
 | `…0003_rpc.sql` | Funções chamadas pelo site e pelo painel |
 | `…0004_seguranca_agendamento.sql` | Correções de segurança, consentimento LGPD, parâmetros, relatório |
 | `…0005_correcoes_conselho.sql` | Contato por agendamento, grade de horários, travas nos limites, expiração de Pix, agenda do painel por papel |
+| `…0006_pendencias.sql` | Ocupação da agenda só pelo servidor, teto de reservas online pendentes, status do profissional só avança |
 
 Com a [Supabase CLI](https://supabase.com/docs/guides/cli):
 
@@ -46,6 +47,11 @@ código.
 update public.parametros_agendamento set antecedencia_minima_minutos = 60, janela_dias = 45;
 ```
 
+**Teto de reservas online não confirmadas** (`max_online_pendentes_por_profissional_dia`, padrão 6): limita quantas
+reservas online com status "agendado" cada profissional pode ter no mesmo dia. Reservas "pagar na clínica" não
+expiram, então o teto impede que um robô ocupe a agenda inteira. **Confirmar a reserva no painel libera a vaga.**
+Use `null` para desligar.
+
 ### Expiração de reservas Pix não pagas
 
 Desligada por padrão. **Só ligue depois que o webhook de pagamento estiver confirmando os Pix**, senão todas as
@@ -58,8 +64,9 @@ select cron.schedule('expirar-pix', '*/5 * * * *', $$select public.expirar_reser
 
 ## Como o agendamento online é protegido
 
-1. O navegador lê serviços, profissionais e horários livres com a chave pública (`anon`), que só enxerga dados não
-   sensíveis.
+1. O navegador lê serviços e profissionais com a chave pública (`anon`), que só enxerga dados não sensíveis. Os
+   horários livres vêm de `GET /api/horarios`: a ocupação da agenda (`intervalos_ocupados`) só pode ser lida pelo
+   servidor.
 2. Para criar o agendamento, o navegador chama `POST /api/agendamentos`. A rota valida os dados, confere o captcha
    (Cloudflare Turnstile) e só então chama a função `criar_agendamento_publico` com a chave `service_role`. A chave
    pública **não** pode chamar essa função.

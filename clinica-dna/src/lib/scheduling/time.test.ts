@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  dataValida,
   dayOfWeek,
   dayRangeUtc,
   epochToLocalDate,
@@ -34,6 +35,14 @@ describe("time", () => {
 
   it("aceita HH:mm:ss vindo do Postgres", () => {
     expect(timeToMinutes("13:45:00")).toBe(13 * 60 + 45);
+  });
+
+  it("dataValida rejeita datas que não existem", () => {
+    expect(dataValida("2026-11-16")).toBe(true);
+    expect(dataValida("2028-02-29")).toBe(true);
+    expect(dataValida("2026-02-29")).toBe(false);
+    expect(dataValida("2026-99-99")).toBe(false);
+    expect(dataValida("16/11/2026")).toBe(false);
   });
 
   it("intervalo do dia em UTC", () => {

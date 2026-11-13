@@ -6,7 +6,7 @@ import type { PagamentoMetodo } from "@/lib/types/domain";
 import { normalizaNome, normalizaWhatsapp, onlyDigits, validaPaciente } from "@/lib/validation";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** O paciente só escolhe entre Pix (online) e pagar na clínica. */
+/** Pix (online) ou pagar na clínica com cartão de crédito, débito ou dinheiro. */
 const METODOS_PUBLICOS: PagamentoMetodo[] = ["pix", "cartao_credito", "cartao_debito", "dinheiro"];
 
 interface Corpo {
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   const ip = ipDaRequisicao(req.headers);
   try {
-    if (!(await verificaCaptcha(corpo.captchaToken, ip))) {
+    if (!(await verificaCaptcha(corpo.captchaToken, ip, req.headers.get("host")))) {
       return erro("Não foi possível confirmar que você não é um robô. Tente novamente.", 400);
     }
 
@@ -81,14 +81,14 @@ export async function POST(req: NextRequest) {
       if (error.code === "P0001") return erro(error.message, 400);
       if (error.code === "P0002") return erro(error.message, 409);
       if (error.code === "P0003") return erro(error.message, 429);
-      console.error("[api/agendamentos] rpc", error);
+      console.error("[api/agendamentos] rpc", error.code, error.message);
       return erro("Não foi possível concluir o agendamento", 500);
     }
 
     const r = data as { agendamento_id: string; codigo: string; pagamento_id: string; valor: number };
     return NextResponse.json({ codigo: r.codigo, valor: Number(r.valor) }, { status: 201 });
   } catch (e) {
-    console.error("[api/agendamentos]", e);
+    console.error("[api/agendamentos]", (e as Error).name, (e as Error).message);
     return erro("Não foi possível concluir o agendamento", 500);
   }
 }

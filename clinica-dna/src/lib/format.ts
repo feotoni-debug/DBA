@@ -33,6 +33,20 @@ export const STATUS_LABEL: Record<AgendamentoStatus, string> = {
   cancelado: "Cancelado",
 };
 
+/**
+ * Para onde o PROFISSIONAL pode levar um atendimento (o banco aplica a mesma
+ * regra no trigger agendamentos_protege_campos_profissional).
+ */
+export const PROXIMOS_STATUS_PROFISSIONAL: Record<AgendamentoStatus, AgendamentoStatus[]> = {
+  agendado: ["em_atendimento", "faltou"],
+  confirmado: ["em_atendimento", "faltou"],
+  aguardando_atendimento: ["em_atendimento", "faltou"],
+  em_atendimento: ["concluido"],
+  concluido: [],
+  faltou: [],
+  cancelado: [],
+};
+
 export const STATUS_COR: Record<AgendamentoStatus, string> = {
   agendado: "bg-slate-100 text-slate-700",
   confirmado: "bg-sky-100 text-sky-800",

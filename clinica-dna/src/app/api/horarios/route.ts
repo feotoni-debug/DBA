@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAvailableSlots, FIRST_AVAILABLE } from "@/lib/scheduling/slots";
 import { supabaseSlotsSource } from "@/lib/scheduling/supabase-source";
-import { DATE_RE } from "@/lib/scheduling/time";
-import { createAnonClient } from "@/lib/supabase/server";
+import { dataValida } from "@/lib/scheduling/time";
+import { createAdminClient, createAnonClient } from "@/lib/supabase/server";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   if (
     !UUID_RE.test(servicoId) ||
     !(profissionalId === FIRST_AVAILABLE || UUID_RE.test(profissionalId)) ||
-    !DATE_RE.test(data)
+    !dataValida(data)
   ) {
     return NextResponse.json({ erro: "Parâmetros inválidos" }, { status: 400 });
   }
@@ -24,11 +24,11 @@ export async function GET(req: NextRequest) {
   try {
     const slots = await getAvailableSlots(
       { servicoId, profissionalId, data },
-      supabaseSlotsSource(createAnonClient()),
+      supabaseSlotsSource(createAnonClient(), createAdminClient()),
     );
     return NextResponse.json({ slots }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
-    console.error("[api/horarios]", e);
+    console.error("[api/horarios]", (e as { code?: string }).code, (e as Error).message);
     return NextResponse.json({ erro: "Não foi possível carregar os horários" }, { status: 500 });
   }
 }

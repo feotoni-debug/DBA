@@ -125,7 +125,7 @@ describe("getAvailableSlots", () => {
 
   function fonte(over: Partial<SlotsDataSource> = {}): SlotsDataSource {
     return {
-      getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30, passo_minutos: 10 }),
+      getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30, passo_minutos: 10, max_online_pendentes_por_profissional_dia: null }),
       getServico: async () => servicoAtivo,
       getProfissionaisIdsDoServico: async () => ["p1", "p2"],
       getHorariosTrabalho: async (ids) => ids.flatMap((id) => grade(id, ["08:00", "10:00"])),
@@ -136,19 +136,43 @@ describe("getAvailableSlots", () => {
 
   it("usa a antecedência vinda do banco", async () => {
     const now = Date.parse(iso("07:50"));
-    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 60, janela_dias: 30, passo_minutos: 10 }) });
+    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 60, janela_dias: 30, passo_minutos: 10, max_online_pendentes_por_profissional_dia: null }) });
     const slots = await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now }, ds);
     expect(slots[0].label).toBe("08:50"); // 07:50 + 60 min
   });
 
   it("usa o passo da grade vindo do banco", async () => {
-    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30, passo_minutos: 30 }) });
+    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30, passo_minutos: 30, max_online_pendentes_por_profissional_dia: null }) });
     const slots = await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now: ANTES }, ds);
     expect(labels(slots)).toEqual(["08:00", "08:30", "09:00"]);
   });
 
+  it("teto de reservas online pendentes tira o profissional do dia", async () => {
+    const ds = fonte({
+      getParametros: async () => ({
+        antecedencia_minima_minutos: 30,
+        janela_dias: 30,
+        passo_minutos: 10,
+        max_online_pendentes_por_profissional_dia: 1,
+      }),
+      getIntervalosOcupados: async () => [
+        { profissional_id: "p1", inicio: iso("09:00"), fim: iso("09:50"), tipo: "agendamento", online_pendente: true },
+      ],
+    });
+    const slots = await getAvailableSlots(
+      { profissionalId: FIRST_AVAILABLE, servicoId: "s1", data: DIA, now: ANTES },
+      ds,
+    );
+    expect(new Set(slots.map((s) => s.profissionalId))).toEqual(new Set(["p2"]));
+    expect(await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now: ANTES }, ds)).toEqual([]);
+  });
+
+  it("data inexistente → vazio", async () => {
+    expect(await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: "2026-02-30", now: ANTES }, fonte())).toEqual([]);
+  });
+
   it("fora da janela de agendamento → vazio", async () => {
-    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 3, passo_minutos: 10 }) });
+    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 3, passo_minutos: 10, max_online_pendentes_por_profissional_dia: null }) });
     expect(await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now: ANTES }, ds)).toEqual([]);
     // data no passado
     const depois = Date.parse("2026-11-20T12:00:00Z");

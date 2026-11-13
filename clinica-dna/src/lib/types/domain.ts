@@ -104,6 +104,8 @@ export interface IntervaloOcupado {
   inicio: string; // ISO
   fim: string; // ISO (já inclui buffer do agendamento existente)
   tipo: "agendamento" | "bloqueio";
+  /** Reserva online ainda não confirmada (conta para o teto por profissional/dia). */
+  online_pendente?: boolean;
 }
 
 /** Espelha `parametros_agendamento_publicos()` no banco. */
@@ -112,6 +114,8 @@ export interface ParametrosAgendamento {
   janela_dias: number;
   /** Passo da grade de horários (min) — o banco recusa horários fora dela. */
   passo_minutos: number;
+  /** Teto de reservas online não confirmadas por profissional/dia (null = sem teto). */
+  max_online_pendentes_por_profissional_dia: number | null;
 }
 
 /** Linha devolvida por `agenda_painel()` (colunas variam por papel). */

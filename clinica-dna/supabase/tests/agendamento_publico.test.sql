@@ -25,6 +25,8 @@ insert into public.servicos (id, nome, duracao_minutos, preco, buffer_minutos) v
   ('30000000-0000-0000-0000-0000000000c1', 'Serviço Teste', 40, 220.00, 10);
 insert into public.servicos_profissionais (servico_id, profissional_id) values
   ('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000b1');
+-- o teto de reservas online pendentes é testado à parte (seção 16)
+update public.parametros_agendamento set max_online_pendentes_por_profissional_dia = null;
 
 -- Próxima segunda-feira às <h> horas (decimal) em São Paulo
 create function pg_temp.seg(h numeric) returns timestamptz language sql as $$
@@ -181,6 +183,17 @@ end $$;
 select set_config('teste.n_ag', count(*)::text, true)
 from public.agendamentos where status not in ('cancelado', 'faltou');
 set local role anon;
+select pg_temp.espera_erro(
+  $q$ select * from public.intervalos_ocupados(array['20000000-0000-0000-0000-0000000000b1'::uuid], now(), now() + interval '1 day') $q$,
+  '42501', 'permission denied', 'intervalos_ocupados não é público');
+reset role;
+set local role service_role;
+select pg_temp.espera_erro(
+  $q$ select * from public.intervalos_ocupados(array['20000000-0000-0000-0000-0000000000b1'::uuid], now(), now() + interval '30 days') $q$,
+  '22023', 'Período inválido', 'intervalos_ocupados limita o período');
+select pg_temp.espera_erro(
+  $q$ select * from public.intervalos_ocupados(array['20000000-0000-0000-0000-0000000000b1'::uuid], now() - interval '30 days', now() - interval '29 days') $q$,
+  '22023', 'Período inválido', 'intervalos_ocupados não mostra o passado');
 do $$
 declare n_ag int; n_bl int;
 begin
@@ -288,6 +301,7 @@ select pg_temp.espera_erro($q$ select * from public.agenda_painel(now(), now() +
 reset role;
 
 -- ------------------------ 14. pagamento aprovado avisa o contato do agendamento
+set local request.jwt.claim.sub = '';  -- webhook roda como service_role, sem usuário
 update public.pagamentos set transacao_externa_id = 'tx-teste'
  where agendamento_id = (select id from public.agendamentos where data_hora_inicio = pg_temp.seg(10));
 set local role service_role;
@@ -311,6 +325,43 @@ begin
   end if;
 end $$;
 reset role;
+
+-- ------------------------- 16. teto de reservas online pendentes (terça-feira)
+reset role;
+update public.parametros_agendamento set max_online_pendentes_por_profissional_dia = 2;
+set local role service_role;
+select pg_temp.agendar(24 + 9, '86288366757', '11955550000', null, 'v1', 'ip-t1');
+select pg_temp.agendar(24 + 10, '71428793860', '11966660000', null, 'v1', 'ip-t2');
+select pg_temp.espera_erro($q$ select pg_temp.agendar(24 + 11, '39053344705', '11944440000', null, 'v1', 'ip-t3') $q$,
+  'P0003', 'agenda online deste profissional está cheia', 'teto de pendentes por profissional/dia');
+reset role;
+-- confirmar uma reserva no painel libera vaga
+update public.agendamentos set status = 'confirmado' where data_hora_inicio = pg_temp.seg(24 + 9);
+set local role service_role;
+select pg_temp.agendar(24 + 11, '39053344705', '11944440000', null, 'v1', 'ip-t3');
+reset role;
+
+-- ------------------------- 17. profissional só avança o status
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000b1';
+set local role authenticated;
+select pg_temp.espera_erro(
+  $q$ update public.agendamentos set status = 'agendado' where data_hora_inicio = pg_temp.seg(9) $q$,
+  'P0001', 'não permitida', 'profissional não volta concluído para agendado');
+update public.agendamentos set status = 'em_atendimento' where data_hora_inicio = pg_temp.seg(16);
+update public.agendamentos set status = 'concluido' where data_hora_inicio = pg_temp.seg(16);
+select pg_temp.espera_erro(
+  $q$ update public.agendamentos set status = 'cancelado' where data_hora_inicio = pg_temp.seg(16) $q$,
+  'P0001', 'não permitida', 'profissional não cancela atendimento concluído');
+select pg_temp.espera_erro(
+  $q$ update public.agendamentos set contato_whatsapp = '11900000000' where data_hora_inicio = pg_temp.seg(10) $q$,
+  'P0001', 'só podem alterar status', 'profissional não altera contato');
+reset role;
+do $$
+begin
+  if (select status from public.agendamentos where data_hora_inicio = pg_temp.seg(16)) <> 'concluido' then
+    raise exception 'FALHOU: profissional não conseguiu avançar o status';
+  end if;
+end $$;
 
 select 'TODOS OS TESTES PASSARAM' as resultado;
 rollback;

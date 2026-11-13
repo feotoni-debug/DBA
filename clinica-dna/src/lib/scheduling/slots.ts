@@ -6,8 +6,8 @@ import type {
   Slot,
 } from "@/lib/types/domain";
 import {
-  DATE_RE,
   MS_PER_MINUTE,
+  dataValida,
   addDays,
   dayOfWeek,
   epochToLocalDate,
@@ -70,7 +70,7 @@ export function computeAvailableSlots(input: ComputeSlotsInput): Slot[] {
     now = Date.now(),
   } = input;
 
-  if (!DATE_RE.test(date)) throw new Error(`Data inválida: ${date}`);
+  if (!dataValida(date)) throw new Error(`Data inválida: ${date}`);
 
   const dow = dayOfWeek(date);
   const janelas = horarios
@@ -183,7 +183,7 @@ export async function getAvailableSlots(
   ds: SlotsDataSource,
 ): Promise<Slot[]> {
   const { profissionalId, servicoId, data, now = Date.now() } = params;
-  if (!DATE_RE.test(data)) return [];
+  if (!dataValida(data)) return [];
 
   const [parametros, servico] = await Promise.all([ds.getParametros(), ds.getServico(servicoId)]);
   if (!servico || !servico.ativo) return [];
@@ -210,8 +210,20 @@ export async function getAvailableSlots(
     ds.getIntervalosOcupados(alvo, inicio, fim),
   ]);
 
+  // Profissional com o teto de reservas online pendentes atingido neste dia
+  // não oferece horários online (o banco recusaria o agendamento).
+  const teto = parametros.max_online_pendentes_por_profissional_dia;
+  const pendentes = new Map<string, number>();
+  for (const o of ocupados) {
+    if (o.online_pendente && epochToLocalDate(Date.parse(o.inicio)) === data) {
+      pendentes.set(o.profissional_id, (pendentes.get(o.profissional_id) ?? 0) + 1);
+    }
+  }
+  const disponiveis = teto == null ? alvo : alvo.filter((id) => (pendentes.get(id) ?? 0) < teto);
+  if (disponiveis.length === 0) return [];
+
   const porProf: Record<string, Slot[]> = {};
-  for (const id of alvo) {
+  for (const id of disponiveis) {
     porProf[id] = computeAvailableSlots({
       date: data,
       profissionalId: id,
@@ -228,6 +240,7 @@ export async function getAvailableSlots(
   const limite = now + parametros.janela_dias * 24 * 60 * MS_PER_MINUTE;
   const dentroDaJanela = (s: Slot) => Date.parse(s.inicio) <= limite;
 
-  const slots = alvo.length === 1 ? porProf[alvo[0]] : mergeFirstAvailable(porProf, ocupados, data);
+  const slots =
+    disponiveis.length === 1 ? porProf[disponiveis[0]] : mergeFirstAvailable(porProf, ocupados, data);
   return slots.filter(dentroDaJanela);
 }

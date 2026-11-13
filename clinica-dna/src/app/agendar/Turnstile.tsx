@@ -41,6 +41,7 @@ export function Turnstile({
       widgetId = window.turnstile.render(el, {
         sitekey: siteKey,
         language: "pt-br",
+        action: "agendamento",
         callback: (t: string) => cb.current.onToken(t),
         "expired-callback": () => cb.current.onToken(null),
         "error-callback": () => {

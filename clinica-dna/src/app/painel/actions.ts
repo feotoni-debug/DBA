@@ -38,6 +38,10 @@ export async function atualizarStatus(_anterior: ResultadoStatus, formData: Form
 
   if (error) {
     console.error("[painel] atualizarStatus", error.code, error.message);
+    if (error.code === "P0001") {
+      // mensagens controladas, vindas dos triggers de permissão
+      return { ok: false, mensagem: error.message };
+    }
     if (error.code === "23P01") {
       return { ok: false, mensagem: "Já existe outro atendimento neste horário para este profissional." };
     }

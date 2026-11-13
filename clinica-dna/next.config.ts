@@ -2,6 +2,14 @@ import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// As duas chaves do Turnstile andam juntas: só uma configurada = nenhum
+// agendamento funciona em produção (widget some ou servidor recusa tudo).
+if (!isDev && Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) !== Boolean(process.env.TURNSTILE_SECRET_KEY)) {
+  throw new Error(
+    "Turnstile: configure NEXT_PUBLIC_TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY juntas (ou nenhuma das duas).",
+  );
+}
+
 /** Origem do Supabase (REST + Realtime) liberada no connect-src. */
 function supabaseOrigins(): string[] {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
