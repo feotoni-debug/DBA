@@ -103,6 +103,13 @@ export interface IntervaloOcupado {
   profissional_id: string;
   inicio: string; // ISO
   fim: string; // ISO (já inclui buffer do agendamento existente)
+  tipo: "agendamento" | "bloqueio";
+}
+
+/** Espelha `parametros_agendamento_publicos()` no banco. */
+export interface ParametrosAgendamento {
+  antecedencia_minima_minutos: number;
+  janela_dias: number;
 }
 
 export interface Slot {

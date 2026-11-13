@@ -1,13 +1,22 @@
 import { clinic } from "@/config/clinic";
-import type { HorarioTrabalho, IntervaloOcupado, Servico, Slot } from "@/lib/types/domain";
+import type {
+  HorarioTrabalho,
+  IntervaloOcupado,
+  ParametrosAgendamento,
+  Servico,
+  Slot,
+} from "@/lib/types/domain";
 import {
   DATE_RE,
   MS_PER_MINUTE,
+  addDays,
   dayOfWeek,
+  epochToLocalDate,
   epochToLocalIso,
   epochToLocalLabel,
   localToEpoch,
   timeToMinutes,
+  todayLocal,
 } from "./time";
 
 /* =============================================================================
@@ -34,9 +43,10 @@ export interface ComputeSlotsInput {
   servico: Pick<Servico, "duracao_minutos" | "buffer_minutos">;
   horarios: HorarioTrabalho[];
   ocupados: IntervaloOcupado[];
+  /** Antecedência mínima — vem de `parametros_agendamento` no banco. */
+  minAdvanceMinutes: number;
   now?: number; // epoch ms (injetável para testes)
   stepMinutes?: number;
-  minAdvanceMinutes?: number;
 }
 
 interface EpochRange {
@@ -55,9 +65,9 @@ export function computeAvailableSlots(input: ComputeSlotsInput): Slot[] {
     servico,
     horarios,
     ocupados,
+    minAdvanceMinutes,
     now = Date.now(),
     stepMinutes = clinic.slotStepMinutes,
-    minAdvanceMinutes = clinic.minAdvanceMinutes,
   } = input;
 
   if (!DATE_RE.test(date)) throw new Error(`Data inválida: ${date}`);
@@ -120,13 +130,22 @@ export function computeAvailableSlots(input: ComputeSlotsInput): Slot[] {
  * "Primeiro disponível": junta os slots de vários profissionais e, para cada
  * horário, escolhe o profissional com MENOS atendimentos no dia (distribui a
  * carga); empate → ordem estável da lista.
+ *
+ * Só contam atendimentos que começam no próprio `date` — bloqueios pessoais e
+ * atendimentos de dias vizinhos (que entram na consulta por causa da folga
+ * de buffer) não pesam na escolha.
  */
 export function mergeFirstAvailable(
   slotsPorProfissional: Record<string, Slot[]>,
   ocupados: IntervaloOcupado[],
+  date: string,
 ): Slot[] {
   const carga = new Map<string, number>();
-  for (const o of ocupados) carga.set(o.profissional_id, (carga.get(o.profissional_id) ?? 0) + 1);
+  for (const o of ocupados) {
+    if (o.tipo !== "agendamento") continue;
+    if (epochToLocalDate(Date.parse(o.inicio)) !== date) continue;
+    carga.set(o.profissional_id, (carga.get(o.profissional_id) ?? 0) + 1);
+  }
 
   const porHorario = new Map<string, Slot>();
   for (const [profId, slots] of Object.entries(slotsPorProfissional)) {
@@ -145,6 +164,7 @@ export function mergeFirstAvailable(
 /* -------------------------------------------------------------------------- */
 
 export interface SlotsDataSource {
+  getParametros(): Promise<ParametrosAgendamento>;
   getServico(servicoId: string): Promise<Servico | null>;
   getProfissionaisIdsDoServico(servicoId: string): Promise<string[]>;
   getHorariosTrabalho(profissionalIds: string[]): Promise<HorarioTrabalho[]>;
@@ -162,10 +182,15 @@ export async function getAvailableSlots(
   params: { profissionalId: string; servicoId: string; data: string; now?: number },
   ds: SlotsDataSource,
 ): Promise<Slot[]> {
-  const { profissionalId, servicoId, data, now } = params;
+  const { profissionalId, servicoId, data, now = Date.now() } = params;
+  if (!DATE_RE.test(data)) return [];
 
-  const servico = await ds.getServico(servicoId);
+  const [parametros, servico] = await Promise.all([ds.getParametros(), ds.getServico(servicoId)]);
   if (!servico || !servico.ativo) return [];
+
+  // Fora da janela de agendamento online → nada a oferecer
+  const hoje = todayLocal(now);
+  if (data < hoje || data > addDays(hoje, parametros.janela_dias)) return [];
 
   const habilitados = await ds.getProfissionaisIdsDoServico(servicoId);
   const alvo =
@@ -187,8 +212,21 @@ export async function getAvailableSlots(
 
   const porProf: Record<string, Slot[]> = {};
   for (const id of alvo) {
-    porProf[id] = computeAvailableSlots({ date: data, profissionalId: id, servico, horarios, ocupados, now });
+    porProf[id] = computeAvailableSlots({
+      date: data,
+      profissionalId: id,
+      servico,
+      horarios,
+      ocupados,
+      now,
+      minAdvanceMinutes: parametros.antecedencia_minima_minutos,
+    });
   }
 
-  return alvo.length === 1 ? porProf[alvo[0]] : mergeFirstAvailable(porProf, ocupados);
+  // Slots além do limite exato (janela em dias contada a partir de agora)
+  const limite = now + parametros.janela_dias * 24 * 60 * MS_PER_MINUTE;
+  const dentroDaJanela = (s: Slot) => Date.parse(s.inicio) <= limite;
+
+  const slots = alvo.length === 1 ? porProf[alvo[0]] : mergeFirstAvailable(porProf, ocupados, data);
+  return slots.filter(dentroDaJanela);
 }
