@@ -25,6 +25,7 @@ As migrations ficam em `supabase/migrations/` e são aplicadas em ordem:
 | `…0002_rls.sql` | Políticas de acesso por papel (admin, recepção, profissional, anônimo) |
 | `…0003_rpc.sql` | Funções chamadas pelo site e pelo painel |
 | `…0004_seguranca_agendamento.sql` | Correções de segurança, consentimento LGPD, parâmetros, relatório |
+| `…0005_correcoes_conselho.sql` | Contato por agendamento, grade de horários, travas nos limites, expiração de Pix, agenda do painel por papel |
 
 Com a [Supabase CLI](https://supabase.com/docs/guides/cli):
 
@@ -37,11 +38,22 @@ criar o primeiro administrador.
 
 ### Parâmetros de agendamento
 
-Antecedência mínima, quantos dias à frente o paciente pode agendar e os limites contra abuso ficam na tabela
-`parametros_agendamento` (uma linha só). O site lê esses valores do banco — não há cópia no código.
+Antecedência mínima, quantos dias à frente o paciente pode agendar, o passo da grade de horários e os limites contra
+abuso ficam na tabela `parametros_agendamento` (uma linha só). O site lê esses valores do banco — não há cópia no
+código.
 
 ```sql
 update public.parametros_agendamento set antecedencia_minima_minutos = 60, janela_dias = 45;
+```
+
+### Expiração de reservas Pix não pagas
+
+Desligada por padrão. **Só ligue depois que o webhook de pagamento estiver confirmando os Pix**, senão todas as
+reservas Pix serão canceladas:
+
+```sql
+update public.parametros_agendamento set expira_pix_pendente_minutos = 30;
+select cron.schedule('expirar-pix', '*/5 * * * *', $$select public.expirar_reservas_pix_pendentes()$$);
 ```
 
 ## Como o agendamento online é protegido
@@ -52,8 +64,11 @@ update public.parametros_agendamento set antecedencia_minima_minutos = 60, janel
    (Cloudflare Turnstile) e só então chama a função `criar_agendamento_publico` com a chave `service_role`. A chave
    pública **não** pode chamar essa função.
 3. No banco, a função valida CPF, horário e grade, limita agendamentos por IP/hora e por CPF, registra o
-   consentimento e **nunca altera o contato de um paciente já cadastrado** — as mensagens vão sempre para o contato
-   do cadastro. Mudança de contato é feita pela recepção.
+   consentimento, exige que o horário esteja na grade e serializa os limites (pedidos paralelos não furam o limite).
+4. **Cada agendamento guarda o contato informado nele**, e as mensagens daquele agendamento vão só para esse
+   contato. O cadastro de um paciente existente nunca é alterado pelo site. Assim, quem digita o CPF de outra pessoa
+   não recebe nada sobre os agendamentos dela, e a resposta não revela se o CPF já é paciente. No painel, a recepção
+   vê um aviso quando o WhatsApp do agendamento é diferente do cadastro.
 
 ## Testes
 

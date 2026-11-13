@@ -125,7 +125,7 @@ describe("getAvailableSlots", () => {
 
   function fonte(over: Partial<SlotsDataSource> = {}): SlotsDataSource {
     return {
-      getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30 }),
+      getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30, passo_minutos: 10 }),
       getServico: async () => servicoAtivo,
       getProfissionaisIdsDoServico: async () => ["p1", "p2"],
       getHorariosTrabalho: async (ids) => ids.flatMap((id) => grade(id, ["08:00", "10:00"])),
@@ -136,13 +136,19 @@ describe("getAvailableSlots", () => {
 
   it("usa a antecedência vinda do banco", async () => {
     const now = Date.parse(iso("07:50"));
-    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 60, janela_dias: 30 }) });
+    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 60, janela_dias: 30, passo_minutos: 10 }) });
     const slots = await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now }, ds);
     expect(slots[0].label).toBe("08:50"); // 07:50 + 60 min
   });
 
+  it("usa o passo da grade vindo do banco", async () => {
+    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 30, passo_minutos: 30 }) });
+    const slots = await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now: ANTES }, ds);
+    expect(labels(slots)).toEqual(["08:00", "08:30", "09:00"]);
+  });
+
   it("fora da janela de agendamento → vazio", async () => {
-    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 3 }) });
+    const ds = fonte({ getParametros: async () => ({ antecedencia_minima_minutos: 30, janela_dias: 3, passo_minutos: 10 }) });
     expect(await getAvailableSlots({ profissionalId: "p1", servicoId: "s1", data: DIA, now: ANTES }, ds)).toEqual([]);
     // data no passado
     const depois = Date.parse("2026-11-20T12:00:00Z");

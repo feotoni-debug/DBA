@@ -26,11 +26,10 @@ export const clinic = {
     "Cancelamentos ou remarcações: até 24h antes, pelo WhatsApp.",
   ],
   /*
-   * Antecedência mínima e janela de agendamento NÃO ficam aqui: são lidas do
-   * banco (tabela `parametros_agendamento`), que é quem valida o agendamento.
+   * Antecedência mínima, janela de agendamento e passo da grade de horários
+   * NÃO ficam aqui: são lidos do banco (tabela `parametros_agendamento`), que
+   * é quem valida o agendamento.
    */
-  /** Granularidade de início dos horários oferecidos (minutos). */
-  slotStepMinutes: 10,
   /**
    * Versão da política de privacidade exibida em /privacidade. Troque a data
    * sempre que o texto mudar: cada agendamento registra a versão aceita.

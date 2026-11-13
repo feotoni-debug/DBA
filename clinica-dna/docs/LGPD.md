@@ -7,7 +7,7 @@
 
 | Onde | Dados | Quem acessa |
 | --- | --- | --- |
-| `clientes` | nome, CPF, WhatsApp, e-mail, data de nascimento, observações de histórico | admin, recepção; profissional só de quem já agendou com ele |
+| `clientes` | nome, CPF, WhatsApp, e-mail, data de nascimento, observações de histórico | admin, recepção (profissional vê só nome e WhatsApp dos próprios atendimentos, pela função `agenda_painel`) |
 | `agendamentos` | serviço, profissional, horário, status, hash do IP de origem | admin, recepção; profissional só os próprios |
 | `pagamentos` | valor, método, status, ids do gateway | admin, recepção |
 | `consentimentos` | versão da política aceita, data, hash do IP | admin |
@@ -21,7 +21,9 @@ O site público nunca lê essas tabelas diretamente — só por funções que de
   versão fica em `src/config/clinic.ts` → `politicaPrivacidadeVersao`.
 - **Minimização no site**: o formulário pede só nome, CPF, WhatsApp e e-mail opcional.
 - **IP não é armazenado**: guardamos apenas um HMAC do IP (com segredo `IP_HASH_SECRET`), usado para limitar abuso.
-- **Contato protegido**: o fluxo público não altera dados de um paciente existente.
+- **Contato protegido**: o fluxo público não altera dados de um paciente existente, e as mensagens de cada
+  agendamento vão só para o contato informado nele — digitar o CPF de outra pessoa não dá acesso a nada dela.
+- **Mínimo necessário para o profissional**: sem acesso à tabela `clientes` (CPF, e-mail, nascimento, histórico).
 - **Página `/privacidade`** com um modelo de texto (precisa de revisão jurídica).
 
 ## Pendências recomendadas

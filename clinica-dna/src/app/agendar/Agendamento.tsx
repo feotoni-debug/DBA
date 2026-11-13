@@ -52,6 +52,10 @@ export function Agendamento() {
   const [metodo, setMetodo] = useState<PagamentoMetodo>("pix");
   const [aceite, setAceite] = useState(false);
   const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const [erroCaptcha, setErroCaptcha] = useState(false);
+  const [erroHorarios, setErroHorarios] = useState<string | null>(null);
+  const [recargaHorarios, setRecargaHorarios] = useState(0);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ codigo: string; valor: number } | null>(null);
@@ -94,21 +98,33 @@ export function Agendamento() {
     })();
   }, [supabase, servico]);
 
-  // Horários do dia
+  // Horários do dia (recarregados também quando `recargaHorarios` muda)
   useEffect(() => {
     setSlots(null);
     setSlot(null);
+    setErroHorarios(null);
     if (!servico || !profissionalId || !data) return;
     const ctrl = new AbortController();
     const qs = new URLSearchParams({ servico: servico.id, profissional: profissionalId, data });
     fetch(`/api/horarios?${qs}`, { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((j: { slots?: Slot[] }) => setSlots(j.slots ?? []))
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as { slots?: Slot[] };
+      })
+      .then((j) => setSlots(j.slots ?? []))
       .catch((e) => {
-        if (e.name !== "AbortError") setSlots([]);
+        if (e.name === "AbortError") return;
+        // Falha NÃO é "sem horários": avisa e oferece tentar de novo
+        setErroHorarios("Não foi possível carregar os horários. Verifique sua conexão e tente novamente.");
       });
     return () => ctrl.abort();
-  }, [servico, profissionalId, data]);
+  }, [servico, profissionalId, data, recargaHorarios]);
+
+  /** O token do Turnstile vale para UMA verificação: depois de qualquer erro, gera outro. */
+  function novoCaptcha() {
+    setCaptcha(null);
+    setCaptchaKey((k) => k + 1);
+  }
 
   const datas = useMemo(() => {
     if (!parametros) return [];
@@ -155,22 +171,25 @@ export function Agendamento() {
           captchaToken: captcha,
         }),
       });
-      const j = await res.json();
+      const j = (await res.json().catch(() => ({}))) as {
+        erro?: string;
+        campos?: Partial<Record<keyof DadosPaciente, string>>;
+        codigo?: string;
+        valor?: number;
+      };
       if (!res.ok) {
+        novoCaptcha();
         if (j.campos) setErrosCampos(j.campos);
-        setErroEnvio(j.erro ?? "Não foi possível concluir o agendamento.");
-        if (res.status === 409 && profissionalId && data) {
-          // Horário tomado por outra pessoa: volta para a lista atualizada
-          setSlot(null);
-          setSlots(null);
-          const qs = new URLSearchParams({ servico: servico.id, profissional: profissionalId, data });
-          const r2 = await fetch(`/api/horarios?${qs}`);
-          setSlots(((await r2.json()) as { slots?: Slot[] }).slots ?? []);
+        setErroEnvio(j.erro ?? "Não foi possível concluir o agendamento. Tente novamente.");
+        if (res.status === 409) {
+          // Horário não está mais disponível: volta para a lista atualizada
+          setRecargaHorarios((n) => n + 1);
         }
         return;
       }
-      setResultado(j);
+      setResultado({ codigo: j.codigo ?? "", valor: Number(j.valor ?? 0) });
     } catch {
+      novoCaptcha();
       setErroEnvio("Falha de conexão. Verifique sua internet e tente novamente.");
     } finally {
       setEnviando(false);
@@ -309,9 +328,22 @@ export function Agendamento() {
           {data && (
             <div className="mt-4">
               {erroEnvio && !slot && (
-                <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-danger">{erroEnvio}</p>
+                <p role="alert" className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-danger">
+                  {erroEnvio}
+                </p>
               )}
-              {!slots ? (
+              {erroHorarios ? (
+                <div role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-danger">
+                  <p>{erroHorarios}</p>
+                  <button
+                    type="button"
+                    onClick={() => setRecargaHorarios((n) => n + 1)}
+                    className="mt-2 font-medium underline"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : !slots ? (
                 <p className="text-muted">Buscando horários…</p>
               ) : slots.length === 0 ? (
                 <p className="text-muted">Sem horários livres neste dia. Escolha outra data.</p>
@@ -407,14 +439,26 @@ export function Agendamento() {
               </span>
             </label>
 
-            <Turnstile onToken={setCaptcha} />
+            <Turnstile
+              key={captchaKey}
+              onToken={(t) => {
+                setCaptcha(t);
+                if (t) setErroCaptcha(false);
+              }}
+              onErro={() => setErroCaptcha(true)}
+            />
+            {erroCaptcha && (
+              <p role="alert" className="text-sm text-danger">
+                Não foi possível carregar a verificação de segurança. Verifique sua conexão e recarregue a página.
+              </p>
+            )}
 
             <p className="text-sm text-muted">
               Se você já é paciente, as mensagens serão enviadas para o contato que está no seu cadastro. Para
               alterá-lo, fale com a recepção.
             </p>
 
-            {erroEnvio && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-danger">{erroEnvio}</p>}
+            {erroEnvio && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-danger">{erroEnvio}</p>}
 
             <button type="submit" className="btn w-full" disabled={enviando}>
               {enviando ? "Agendando…" : `Confirmar agendamento · ${formataMoeda(servico.preco)}`}

@@ -1,4 +1,3 @@
-import { clinic } from "@/config/clinic";
 import type {
   HorarioTrabalho,
   IntervaloOcupado,
@@ -45,8 +44,9 @@ export interface ComputeSlotsInput {
   ocupados: IntervaloOcupado[];
   /** Antecedência mínima — vem de `parametros_agendamento` no banco. */
   minAdvanceMinutes: number;
+  /** Passo da grade — vem de `parametros_agendamento` (o banco valida o alinhamento). */
+  stepMinutes: number;
   now?: number; // epoch ms (injetável para testes)
-  stepMinutes?: number;
 }
 
 interface EpochRange {
@@ -66,8 +66,8 @@ export function computeAvailableSlots(input: ComputeSlotsInput): Slot[] {
     horarios,
     ocupados,
     minAdvanceMinutes,
+    stepMinutes,
     now = Date.now(),
-    stepMinutes = clinic.slotStepMinutes,
   } = input;
 
   if (!DATE_RE.test(date)) throw new Error(`Data inválida: ${date}`);
@@ -220,6 +220,7 @@ export async function getAvailableSlots(
       ocupados,
       now,
       minAdvanceMinutes: parametros.antecedencia_minima_minutos,
+      stepMinutes: parametros.passo_minutos,
     });
   }
 
