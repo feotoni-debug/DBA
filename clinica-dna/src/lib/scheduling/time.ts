@@ -12,6 +12,14 @@ const OFFSET_MIN = (() => {
 
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** "YYYY-MM-DD" que existe no calendário (rejeita 2026-99-99, 2026-02-30...). */
+export function dataValida(date: string): boolean {
+  if (!DATE_RE.test(date)) return false;
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
 /** "HH:mm[:ss]" → minutos desde meia-noite */
 export function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);

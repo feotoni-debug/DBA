@@ -25,10 +25,14 @@ export const clinic = {
     "Traga documento com foto e, se tiver, exames recentes.",
     "Cancelamentos ou remarcações: até 24h antes, pelo WhatsApp.",
   ],
-  /** Antecedência mínima para agendar online (minutos). */
-  minAdvanceMinutes: 30,
-  /** Quantos dias à frente o paciente pode agendar. */
-  bookingWindowDays: 30,
-  /** Granularidade de início dos horários oferecidos (minutos). */
-  slotStepMinutes: 10,
+  /*
+   * Antecedência mínima, janela de agendamento e passo da grade de horários
+   * NÃO ficam aqui: são lidos do banco (tabela `parametros_agendamento`), que
+   * é quem valida o agendamento.
+   */
+  /**
+   * Versão da política de privacidade exibida em /privacidade. Troque a data
+   * sempre que o texto mudar: cada agendamento registra a versão aceita.
+   */
+  politicaPrivacidadeVersao: "2026-11-13",
 } as const;

@@ -103,6 +103,40 @@ export interface IntervaloOcupado {
   profissional_id: string;
   inicio: string; // ISO
   fim: string; // ISO (já inclui buffer do agendamento existente)
+  tipo: "agendamento" | "bloqueio";
+  /** Reserva online ainda não confirmada (conta para o teto por profissional/dia). */
+  online_pendente?: boolean;
+}
+
+/** Espelha `parametros_agendamento_publicos()` no banco. */
+export interface ParametrosAgendamento {
+  antecedencia_minima_minutos: number;
+  janela_dias: number;
+  /** Passo da grade de horários (min) — o banco recusa horários fora dela. */
+  passo_minutos: number;
+  /** Teto de reservas online não confirmadas por profissional/dia (null = sem teto). */
+  max_online_pendentes_por_profissional_dia: number | null;
+}
+
+/** Linha devolvida por `agenda_painel()` (colunas variam por papel). */
+export interface AgendaPainelLinha {
+  id: string;
+  codigo: string;
+  data_hora_inicio: string;
+  data_hora_fim: string;
+  status: AgendamentoStatus;
+  canal: AgendamentoCanal;
+  /** null para profissional */
+  valor: number | null;
+  observacoes: string | null;
+  paciente_nome: string;
+  contato_whatsapp: string | null;
+  /** WhatsApp do agendamento ≠ do cadastro (só staff vê) */
+  contato_divergente: boolean;
+  servico_nome: string;
+  profissional_nome: string;
+  /** null para profissional */
+  pagamento_status: PagamentoStatus | null;
 }
 
 export interface Slot {

@@ -1,36 +1,108 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Clínica DNA
 
-## Getting Started
+Site e sistema de agendamento da Clínica DNA: Next.js 15 (App Router) + Supabase (Postgres, Auth, RLS).
 
-First, run the development server:
+- **Site público** — `/` (apresentação e especialidades), `/agendar` (agendamento online em 4 passos), `/privacidade`.
+- **Área da equipe** — `/login`, `/painel` (agenda do dia, mudança de status) e `/painel/financeiro` (somente admin).
+
+## Rodando localmente
 
 ```bash
+npm install
+cp .env.example .env.local   # preencha as variáveis
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Banco de dados
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+As migrations ficam em `supabase/migrations/` e são aplicadas em ordem:
 
-## Learn More
+| Arquivo | Conteúdo |
+| --- | --- |
+| `…0001_schema.sql` | Tabelas, enums, índices, constraint que impede horários sobrepostos |
+| `…0002_rls.sql` | Políticas de acesso por papel (admin, recepção, profissional, anônimo) |
+| `…0003_rpc.sql` | Funções chamadas pelo site e pelo painel |
+| `…0004_seguranca_agendamento.sql` | Correções de segurança, consentimento LGPD, parâmetros, relatório |
+| `…0005_correcoes_conselho.sql` | Contato por agendamento, grade de horários, travas nos limites, expiração de Pix, agenda do painel por papel |
+| `…0006_pendencias.sql` | Ocupação da agenda só pelo servidor, teto de reservas online pendentes, status do profissional só avança |
 
-To learn more about Next.js, take a look at the following resources:
+Com a [Supabase CLI](https://supabase.com/docs/guides/cli):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+supabase db push        # aplica no projeto remoto
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Depois rode `supabase/seed.sql` para criar o catálogo de serviços e siga as instruções do fim desse arquivo para
+criar o primeiro administrador.
 
-## Deploy on Vercel
+### Parâmetros de agendamento
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Antecedência mínima, quantos dias à frente o paciente pode agendar, o passo da grade de horários e os limites contra
+abuso ficam na tabela `parametros_agendamento` (uma linha só). O site lê esses valores do banco — não há cópia no
+código.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```sql
+update public.parametros_agendamento set antecedencia_minima_minutos = 60, janela_dias = 45;
+```
+
+**Teto de reservas online não confirmadas** (`max_online_pendentes_por_profissional_dia`, padrão 6): limita quantas
+reservas online com status "agendado" cada profissional pode ter no mesmo dia. Reservas "pagar na clínica" não
+expiram, então o teto impede que um robô ocupe a agenda inteira. **Confirmar a reserva no painel libera a vaga.**
+Use `null` para desligar.
+
+### Expiração de reservas Pix não pagas
+
+Desligada por padrão. **Só ligue depois que o webhook de pagamento estiver confirmando os Pix**, senão todas as
+reservas Pix serão canceladas:
+
+```sql
+update public.parametros_agendamento set expira_pix_pendente_minutos = 30;
+select cron.schedule('expirar-pix', '*/5 * * * *', $$select public.expirar_reservas_pix_pendentes()$$);
+```
+
+## Como o agendamento online é protegido
+
+1. O navegador lê serviços e profissionais com a chave pública (`anon`), que só enxerga dados não sensíveis. Os
+   horários livres vêm de `GET /api/horarios`: a ocupação da agenda (`intervalos_ocupados`) só pode ser lida pelo
+   servidor.
+2. Para criar o agendamento, o navegador chama `POST /api/agendamentos`. A rota valida os dados, confere o captcha
+   (Cloudflare Turnstile) e só então chama a função `criar_agendamento_publico` com a chave `service_role`. A chave
+   pública **não** pode chamar essa função.
+3. No banco, a função valida CPF, horário e grade, limita agendamentos por IP/hora e por CPF, registra o
+   consentimento, exige que o horário esteja na grade e serializa os limites (pedidos paralelos não furam o limite).
+4. **Cada agendamento guarda o contato informado nele**, e as mensagens daquele agendamento vão só para esse
+   contato. O cadastro de um paciente existente nunca é alterado pelo site. Assim, quem digita o CPF de outra pessoa
+   não recebe nada sobre os agendamentos dela, e a resposta não revela se o CPF já é paciente. No painel, a recepção
+   vê um aviso quando o WhatsApp do agendamento é diferente do cadastro.
+
+## Testes
+
+```bash
+npm test             # testes unitários (algoritmo de horários, datas, validações)
+npm run typecheck
+npm run lint
+```
+
+Testes do banco (rodam numa transação e desfazem tudo no final), com o Supabase local:
+
+```bash
+supabase start && supabase db reset
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 \
+  -f supabase/tests/agendamento_publico.test.sql
+```
+
+## Antes de publicar
+
+- Preencha os dados reais em `src/config/clinic.ts` (telefone, CNPJ, endereço, responsável técnico).
+- Revise o texto de `/privacidade` com a assessoria jurídica e veja `docs/LGPD.md`.
+- Configure todas as variáveis de `.env.example` na Vercel, incluindo o Turnstile.
+
+## Ainda não implementado
+
+- Envio das notificações: a fila `notificacoes` é preenchida, mas falta o worker/Edge Function que envia WhatsApp e
+  e-mail.
+- Integração de pagamento (Pix / gateway) e o webhook que chama `confirmar_pagamento_externo`.
+- Cadastro de usuários, profissionais, grade de horários e bloqueios pelo painel (hoje, via SQL / Supabase Studio).
+- Agendamento pelo balcão no painel.

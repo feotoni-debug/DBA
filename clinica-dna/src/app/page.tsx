@@ -1,103 +1,87 @@
-import Image from "next/image";
+import Link from "next/link";
+import { clinic } from "@/config/clinic";
+import { formataMoeda } from "@/lib/format";
+import { createAnonClient } from "@/lib/supabase/server";
+import type { Servico } from "@/lib/types/domain";
 
-export default function Home() {
+// Catálogo atualizado a cada 5 minutos
+export const revalidate = 300;
+
+async function carregaServicos(): Promise<Servico[]> {
+  try {
+    const { data, error } = await createAnonClient()
+      .from("servicos")
+      .select("id, nome, descricao, especialidade, duracao_minutos, preco, buffer_minutos, ativo")
+      .eq("ativo", true)
+      .order("nome");
+    if (error) throw error;
+    return (data ?? []) as Servico[];
+  } catch (e) {
+    console.error("[home] serviços", e);
+    return [];
+  }
+}
+
+export default async function Home() {
+  const servicos = await carregaServicos();
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
+    <div className="space-y-12">
+      <section className="rounded-2xl bg-primary-soft px-6 py-12 sm:px-10">
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{clinic.name}</h1>
+        <p className="mt-3 max-w-xl text-lg text-muted">{clinic.tagline}</p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href="/agendar" className="btn">
+            Agendar consulta
+          </Link>
+          <a href={clinic.whatsappHref} className="btn-secondary">
+            Falar no WhatsApp
           </a>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </section>
+
+      {servicos.length > 0 && (
+        <section>
+          <h2 className="mb-4 text-xl font-semibold">Especialidades</h2>
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {servicos.map((s) => (
+              <li key={s.id} className="card flex flex-col">
+                <p className="text-xs font-medium uppercase tracking-wide text-primary">{s.especialidade}</p>
+                <h3 className="mt-1 font-semibold">{s.nome}</h3>
+                {s.descricao && <p className="mt-2 flex-1 text-sm text-muted">{s.descricao}</p>}
+                <p className="mt-4 text-sm">
+                  {s.duracao_minutos} min · <strong>{formataMoeda(s.preco)}</strong>
+                </p>
+                <Link href={`/agendar?servico=${s.id}`} className="mt-3 text-sm font-medium text-primary hover:underline">
+                  Agendar →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="grid gap-4 sm:grid-cols-2">
+        <div className="card">
+          <h2 className="mb-3 font-semibold">Horário de funcionamento</h2>
+          <dl className="space-y-1 text-sm">
+            {clinic.hours.map((h) => (
+              <div key={h.label} className="flex justify-between gap-4">
+                <dt className="text-muted">{h.label}</dt>
+                <dd>{h.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div className="card">
+          <h2 className="mb-3 font-semibold">Antes da consulta</h2>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
+            {clinic.instrucoes.map((i) => (
+              <li key={i}>{i}</li>
+            ))}
+          </ul>
+        </div>
+      </section>
     </div>
   );
 }
